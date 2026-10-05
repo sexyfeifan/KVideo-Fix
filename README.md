@@ -1,3 +1,20 @@
+# KVideo-Fix
+
+> 个人修复分支：基于上游 [KuekHaoYang/KVideo](https://github.com/KuekHaoYang/KVideo)（`831aa7b`），修复安卓电视遥控器（D-pad）在输入框内"光标困住、无法退出"的问题。
+
+**修复内容（TV 遥控器输入框陷阱）：**
+
+1. **Web 端**（`lib/hooks/useSpatialNavigation.ts`、`lib/hooks/useTVDetection.ts`）：
+   - 空间导航覆盖所有可交互元素（输入框/按钮/链接），不再只认 `[data-focusable]`——方向键可从「源名称」逐级走到「接口地址」；
+   - 电视模式下文本框改为**确认步序**：焦点仅"选中"（只读），按 OK 进入编辑，↑/↓ 或 Esc 退出编辑继续移动；
+   - Android TV 壳（`window.KVideoAndroid`）自动开启 TV 模式。
+2. **安卓电视壳**（`android-tv/`）：设置页同样采用"选中 → OK 编辑 → ↓/返回退出"模型；`DpadEditText` 在输入法吞键前拦截返回/方向键，网页输入框编辑时由原生层转发 ↓/↑/返回（`MainActivity.dispatchKeyEvent`），光标永不困住。
+3. **预构建 APK**：[`dist/kvideo-tv.apk`](dist/kvideo-tv.apk)（自签名；安装前需卸载签名不同的旧版）。构建：`android-tv/` 下 `./gradlew assembleRelease -PkvideoUrl=<服务器地址>`。
+
+以下为上游原文档。
+
+---
+
 [![Upstream Sync](https://github.com/sky06walker/KVideo/actions/workflows/Github_Upstream_Sync.yml/badge.svg)](https://github.com/sky06walker/KVideo/actions/workflows/Github_Upstream_Sync.yml)
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/KuekHaoYang/KVideo)

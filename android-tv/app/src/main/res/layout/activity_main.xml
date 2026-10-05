@@ -48,7 +48,7 @@
                     android:textColor="#D7DBE5"
                     android:textSize="18sp" />
 
-                <EditText
+                <com.kvideo.tv.DpadEditText
                     android:id="@+id/url_input"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

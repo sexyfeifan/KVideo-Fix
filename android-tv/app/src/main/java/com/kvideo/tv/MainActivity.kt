@@ -15,6 +15,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebChromeClient.CustomViewCallback
@@ -42,7 +43,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var setupContainer: View
     private lateinit var fullscreenContainer: FrameLayout
-    private lateinit var urlInput: EditText
+    private lateinit var urlInput: DpadEditText
     private lateinit var statusText: TextView
     private lateinit var openButton: Button
     private lateinit var saveButton: Button
@@ -50,6 +51,13 @@ class MainActivity : ComponentActivity() {
     private var customView: View? = null
     private var customViewCallback: CustomViewCallback? = null
     private var wasSetupVisibleBeforeFullscreen = false
+
+    /** True while the setup URL field is in edit mode (keyboard + cursor). */
+    private var isEditingUrl = false
+
+    /** Mirrors the web page's edit state so Back/D-pad can escape web inputs. */
+    @Volatile
+    private var isWebEditing = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,18 +79,30 @@ class MainActivity : ComponentActivity() {
         saveButton.setOnClickListener {
             openConfiguredUrl()
         }
-        urlInput.setOnEditorActionListener { _, actionId, event ->
-            val isKeyboardConfirmAction = actionId == EditorInfo.IME_NULL ||
-                actionId == EditorInfo.IME_ACTION_DONE ||
+
+        // Confirm-step editing: D-pad focus only selects the field, OK opens
+        // the keyboard, and Down/Back get out again without trapping the cursor.
+        urlInput.showSoftInputOnFocus = false
+        urlInput.isCursorVisible = false
+        urlInput.keyInterceptor = { keyCode, action -> handleSetupKey(keyCode, action) }
+        urlInput.setOnClickListener {
+            if (!isEditingUrl) {
+                enterUrlEditMode()
+            }
+        }
+        urlInput.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus && isEditingUrl) {
+                exitUrlEditMode()
+            }
+        }
+        urlInput.setOnEditorActionListener { _, actionId, _ ->
+            val isKeyboardConfirmAction = actionId == EditorInfo.IME_ACTION_DONE ||
                 actionId == EditorInfo.IME_ACTION_GO ||
                 actionId == EditorInfo.IME_ACTION_SEND ||
-                actionId == EditorInfo.IME_ACTION_NEXT
-            val isEnterKey = event?.action == KeyEvent.ACTION_DOWN && (
-                event.keyCode == KeyEvent.KEYCODE_ENTER ||
-                    event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-                )
+                actionId == EditorInfo.IME_ACTION_NEXT ||
+                actionId == EditorInfo.IME_NULL
 
-            if (isKeyboardConfirmAction || isEnterKey) {
+            if (isKeyboardConfirmAction) {
                 openConfiguredUrl()
                 true
             } else {
@@ -149,6 +169,38 @@ class MainActivity : ComponentActivity() {
         } else {
             showSetup(getString(R.string.status_first_launch))
         }
+    }
+
+    /**
+     * While a web input is in edit mode the soft keyboard may swallow D-pad
+     * keys — bridge them straight to the page so the cursor can always escape.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent?): Boolean {
+        if (event != null && !isSetupVisible() && isWebEditing) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        val dir = if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) "down" else "up"
+                        webView.evaluateJavascript(
+                            "window.__kvideoTvNav && window.__kvideoTvNav('$dir')",
+                            null
+                        )
+                    }
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        webView.evaluateJavascript(
+                            "window.__kvideoExitEdit && window.__kvideoExitEdit()",
+                            null
+                        )
+                        isWebEditing = false
+                    }
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -240,9 +292,67 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadConfiguredUrl(url: String) {
+        isEditingUrl = false
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(urlInput.windowToken, 0)
         setupContainer.visibility = View.GONE
         statusText.text = getString(R.string.status_ready)
         webView.loadUrl(url)
+    }
+
+    /** Remote-key handling for the setup URL field (confirm-step edit mode). */
+    private fun handleSetupKey(keyCode: Int, action: Int): Boolean {
+        val isUp = action == KeyEvent.ACTION_UP
+
+        return when (keyCode) {
+            KeyEvent.KEYCODE_BACK -> {
+                if (!isEditingUrl) {
+                    false
+                } else {
+                    if (isUp) exitUrlEditMode()
+                    true
+                }
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (isUp) {
+                    if (isEditingUrl) exitUrlEditMode()
+                    openButton.requestFocus()
+                }
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                if (isUp && isEditingUrl) exitUrlEditMode()
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                if (isUp) {
+                    if (isEditingUrl) exitUrlEditMode() else enterUrlEditMode()
+                }
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun enterUrlEditMode() {
+        if (isEditingUrl) return
+        isEditingUrl = true
+        urlInput.isCursorVisible = true
+        urlInput.setSelection(urlInput.text?.length ?: 0)
+        statusText.text = getString(R.string.status_editing_hint)
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(urlInput, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun exitUrlEditMode() {
+        if (!isEditingUrl) return
+        isEditingUrl = false
+        urlInput.isCursorVisible = false
+        statusText.text = getString(R.string.status_select_hint)
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(urlInput.windowToken, 0)
     }
 
     private fun showSetup(message: String) {
@@ -266,6 +376,8 @@ class MainActivity : ComponentActivity() {
 
         statusText.text = message
         setupContainer.visibility = View.VISIBLE
+        isEditingUrl = false
+        urlInput.isCursorVisible = false
         urlInput.requestFocus()
     }
 
@@ -375,6 +487,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private inner class AndroidPlayerBridge {
+        @JavascriptInterface
+        fun setWebEditing(editing: Boolean) {
+            isWebEditing = editing
+        }
+
         @JavascriptInterface
         fun isPictureInPictureSupported(): Boolean = this@MainActivity.isPictureInPictureSupported()
 

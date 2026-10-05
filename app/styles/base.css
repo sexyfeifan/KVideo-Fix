@@ -185,3 +185,16 @@ body.tv-mode [class*="gap-3"] {
 body.tv-mode [class*="gap-4"] {
     gap: 1.5rem;
 }
+
+/* TV confirm-step text fields: selected (armed) vs actively editing */
+body.tv-mode [data-tv-editable][readonly]:focus {
+    outline: 3px solid var(--accent-color);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 6px rgba(0, 122, 255, 0.25);
+}
+
+body.tv-mode [data-tv-editable]:not([readonly]) {
+    outline: 3px solid var(--accent-color);
+    outline-offset: 3px;
+    cursor: text;
+}

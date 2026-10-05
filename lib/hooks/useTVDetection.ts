@@ -25,6 +25,12 @@ export function useTVDetection(): boolean {
   const [isTV, setIsTV] = useState(false);
 
   useEffect(() => {
+    // The Android TV shell app exposes this JS bridge — always TV there.
+    if ((window as unknown as Record<string, unknown>).KVideoAndroid) {
+      setIsTV(true);
+      return;
+    }
+
     const ua = navigator.userAgent;
 
     // Check UA for TV indicators
@@ -39,8 +45,11 @@ export function useTVDetection(): boolean {
     const isLargeScreen = window.innerWidth >= 1280;
     const hasNoTouch = !('ontouchstart' in window) && navigator.maxTouchPoints === 0;
     const lowDensity = window.devicePixelRatio <= 1.5;
+    // Android set-top boxes (Chrome/WebView) report no touch and a big screen
+    // but often a 2x density, so density must not gate them out.
+    const isAndroidBox = /android/i.test(ua) && hasNoTouch && isLargeScreen;
 
-    if (isLargeScreen && hasNoTouch && lowDensity) {
+    if (isLargeScreen && hasNoTouch && (lowDensity || isAndroidBox)) {
       setIsTV(true);
     }
   }, []);

@@ -56,6 +56,9 @@ export function useSearchBoxHandlers({
     };
 
     const handleInputFocus = () => {
+        // In TV confirm-step mode the field is only "selected" (readonly)
+        // until the user presses OK — no dropdown yet.
+        if (inputRef.current?.hasAttribute('readonly')) return;
         showDropdown();
     };
 
@@ -70,12 +73,18 @@ export function useSearchBoxHandlers({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (!isDropdownOpen) return;
 
+        // With no history there is nothing to navigate — let the D-pad
+        // escape the input via spatial navigation instead.
+        const hasItems = searchHistory.length > 0;
+
         switch (e.key) {
             case 'ArrowDown':
+                if (!hasItems) return;
                 e.preventDefault();
                 navigateDropdown('down');
                 break;
             case 'ArrowUp':
+                if (!hasItems) return;
                 e.preventDefault();
                 navigateDropdown('up');
                 break;
