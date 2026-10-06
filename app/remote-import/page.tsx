@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
     isValidRemoteImportCode,
     REMOTE_IMPORT_CODE_LENGTH,
+    REMOTE_IMPORT_PAYLOAD_MAX_BYTES,
     type RemoteImportPayload,
 } from '@/lib/utils/remote-import';
 
@@ -52,15 +53,28 @@ export default function RemoteImportPage() {
             if (res.status === 200) {
                 setState('success');
                 setMessage('已发送，请查看电视');
-            } else if (res.status === 404 || res.status === 410) {
+                return;
+            }
+            const body = await res.json().catch(() => ({} as { error?: string }));
+            const error = typeof body.error === 'string' ? body.error : '';
+            if (res.status === 404 || error === 'not_found') {
                 setState('expired');
                 setMessage('验证码已失效，请在电视上重新生成');
             } else if (res.status === 409) {
                 setState('pending');
                 setMessage('电视端已有待处理的导入，请稍候再试');
+            } else if (res.status === 413 || error === 'payload_too_large') {
+                setState('error');
+                setMessage('内容过大，请换更小的文件（上限 5MB）');
+            } else if (res.status === 429 || error === 'rate_limited') {
+                setState('error');
+                setMessage('尝试过于频繁，请稍后再试');
+            } else if (error === 'invalid_code') {
+                setState('error');
+                setMessage('验证码格式不正确，请输入电视上的 6 位验证码');
             } else {
                 setState('error');
-                setMessage('发送失败：内容格式不正确');
+                setMessage('发送失败：内容格式不正确，请检查后重试');
             }
         } catch {
             setState('error');
@@ -81,13 +95,28 @@ export default function RemoteImportPage() {
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        if (fileInputRef.current) fileInputRef.current.value = '';
         if (!file) return;
+        if (file.size > REMOTE_IMPORT_PAYLOAD_MAX_BYTES) {
+            setState('error');
+            setMessage('文件过大，请换更小的文件（上限 5MB）');
+            return;
+        }
         const reader = new FileReader();
         reader.onload = () => {
-            submit({ type: 'file', content: String(reader.result || '') });
+            const content = String(reader.result || '');
+            if (!content) {
+                setState('error');
+                setMessage('文件内容为空，请重新选择');
+                return;
+            }
+            submit({ type: 'file', content });
+        };
+        reader.onerror = () => {
+            setState('error');
+            setMessage('文件读取失败，请重新选择或改用「粘贴 JSON」');
         };
         reader.readAsText(file);
-        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handleJsonSubmit = (e: React.FormEvent) => {
@@ -106,7 +135,7 @@ export default function RemoteImportPage() {
             <header className="space-y-2">
                 <h1 className="text-2xl font-bold text-[var(--text-color)]">远程导入到电视</h1>
                 <p className="text-[var(--text-color-secondary)] text-sm">
-                    手机上填写内容并发送，电视会自动导入。链接和文件都只在局域网内传输。
+                    手机上填写内容并发送，电视会自动导入。内容会经 KVideo 服务器中转——服务器部署在局域网时数据不出内网，请勿在不信任的公网服务器上使用本功能。
                 </p>
             </header>
 
@@ -198,7 +227,9 @@ export default function RemoteImportPage() {
                 <div
                     className={`p-4 rounded-[var(--radius-2xl)] text-sm border ${state === 'success'
                         ? 'text-green-600 bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30'
-                        : 'text-red-500 bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'
+                        : state === 'pending'
+                            ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/30'
+                            : 'text-red-500 bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30'
                         }`}
                 >
                     {message}

@@ -20,16 +20,20 @@ type TabStatus = 'waiting' | 'importing' | 'done' | 'error';
 const POLL_INTERVAL_MS = 1500;
 
 export function RemoteImportTab({ onImportFile, onAddSubscription }: RemoteImportTabProps) {
-    const [code, setCode] = useState(() => generateRemoteImportCode());
+    // 验证码 / 配对地址只在客户端生成，避免 SSR 与 hydration 不一致
+    const [code, setCode] = useState('');
+    const [token, setToken] = useState('');
+    const [remoteUrl, setRemoteUrl] = useState('');
     const [qrDataUrl, setQrDataUrl] = useState('');
     const [status, setStatus] = useState<TabStatus>('waiting');
     const [message, setMessage] = useState('');
     const [chooserNotice, setChooserNotice] = useState(false);
     const busyRef = useRef(false);
 
-    const remoteUrl = typeof window === 'undefined'
-        ? ''
-        : buildRemoteImportUrl(window.location.origin, code);
+    // 首个验证码仅在客户端生成（SSR 阶段不渲染真实验证码）
+    useEffect(() => {
+        setCode(generateRemoteImportCode());
+    }, []);
 
     // 二维码（黑码白底，任何主题下都可扫）
     useEffect(() => {
@@ -53,9 +57,48 @@ export function RemoteImportTab({ onImportFile, onAddSubscription }: RemoteImpor
         };
     }, [remoteUrl]);
 
-    // 轮询收件箱
+    // 注册配对：服务端只在注册时创建收件箱条目，并签发取件令牌
     useEffect(() => {
-        if (status === 'done') return;
+        if (!code) return;
+        let cancelled = false;
+
+        setToken('');
+        setRemoteUrl(buildRemoteImportUrl(window.location.origin, code));
+
+        fetch('/api/remote-import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'register', code }),
+        })
+            .then(async (res) => {
+                if (!res.ok) {
+                    if (res.status === 503) throw new Error('inbox_full');
+                    throw new Error('register_failed');
+                }
+                return (await res.json()) as { token: string };
+            })
+            .then((data) => {
+                if (!cancelled && data.token) {
+                    setToken(data.token);
+                }
+            })
+            .catch((err) => {
+                if (cancelled) return;
+                console.error('remote import register failed:', err);
+                setStatus('error');
+                setMessage(err instanceof Error && err.message === 'inbox_full'
+                    ? '配对名额已满，请稍后点「重新生成」重试'
+                    : '注册配对失败，请检查网络后点「重新生成」重试');
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [code]);
+
+    // 轮询收件箱（出示取件令牌）
+    useEffect(() => {
+        if (status === 'done' || !code || !token) return;
         let disposed = false;
 
         const dispatchPayload = async (payload: RemoteImportPayload) => {
@@ -69,25 +112,34 @@ export function RemoteImportTab({ onImportFile, onAddSubscription }: RemoteImpor
                     try {
                         await onAddSubscription(createSubscription(payload.name || '远程订阅', payload.url));
                         setStatus('done');
-                        setMessage('订阅已添加，正在刷新…');
+                        // 订阅导入不触发整页刷新，仅更新设置页数据
+                        setMessage('订阅已添加！');
                     } catch {
                         // 不是源列表订阅链接时，按设置备份/源列表内容导入
-                        const text = await fetchTextFromUrl(payload.url);
+                        let text: string;
+                        try {
+                            text = await fetchTextFromUrl(payload.url);
+                        } catch {
+                            throw new Error('url_unreachable');
+                        }
                         const ok = await onImportFile(text);
-                        if (!ok) throw new Error('import_failed');
+                        if (!ok) throw new Error('content_unrecognized');
                         setStatus('done');
                         setMessage('导入成功！正在刷新…');
                     }
                 } else {
                     const ok = await onImportFile(payload.content);
-                    if (!ok) throw new Error('import_failed');
+                    if (!ok) throw new Error('content_unrecognized');
                     setStatus('done');
                     setMessage('导入成功！正在刷新…');
                 }
             } catch (err) {
                 console.error(err);
                 setStatus('error');
-                setMessage('导入失败：内容无法识别或链接无法访问');
+                const reason = err instanceof Error ? err.message : '';
+                setMessage(reason === 'url_unreachable'
+                    ? '导入失败：链接无法访问'
+                    : '导入失败：内容无法识别');
             } finally {
                 busyRef.current = false;
             }
@@ -96,12 +148,21 @@ export function RemoteImportTab({ onImportFile, onAddSubscription }: RemoteImpor
         const poll = async () => {
             if (disposed || busyRef.current) return;
             try {
-                const res = await fetch(`/api/remote-import?code=${code}`, { cache: 'no-store' });
+                const res = await fetch(`/api/remote-import?code=${code}`, {
+                    cache: 'no-store',
+                    headers: { 'X-Pairing-Token': token },
+                });
                 if (!res.ok) {
-                    if (res.status === 400 || res.status === 404) {
+                    if (res.status === 404 || res.status === 400) {
+                        disposed = true;
                         setStatus('error');
                         setMessage('验证码已失效，请点「重新生成」');
+                    } else if (res.status === 429) {
+                        disposed = true;
+                        setStatus('error');
+                        setMessage('请求过于频繁，请稍后点「重新生成」重试');
                     }
+                    // 其他状态：网络抖动，下一轮重试
                     return;
                 }
                 const data = (await res.json()) as RemoteImportPollResponse;
@@ -120,14 +181,18 @@ export function RemoteImportTab({ onImportFile, onAddSubscription }: RemoteImpor
             disposed = true;
             clearInterval(timer);
         };
-    }, [code, status, onImportFile, onAddSubscription]);
+    }, [code, token, status, onImportFile, onAddSubscription]);
 
     // 关闭/切换时注销验证码（best-effort，TTL 兜底）
     useEffect(() => {
+        if (!code || !token) return;
         return () => {
-            fetch(`/api/remote-import?code=${code}`, { method: 'DELETE' }).catch(() => undefined);
+            fetch(`/api/remote-import?code=${code}`, {
+                method: 'DELETE',
+                headers: { 'X-Pairing-Token': token },
+            }).catch(() => undefined);
         };
-    }, [code]);
+    }, [code, token]);
 
     // 某些电视盒子没有文件选择器时，原生层会派发此事件
     useEffect(() => {
@@ -139,6 +204,7 @@ export function RemoteImportTab({ onImportFile, onAddSubscription }: RemoteImpor
     const handleRegenerate = () => {
         busyRef.current = false;
         setCode(generateRemoteImportCode());
+        setToken('');
         setStatus('waiting');
         setMessage('');
     };
@@ -164,7 +230,9 @@ export function RemoteImportTab({ onImportFile, onAddSubscription }: RemoteImpor
 
                     <div className="text-center">
                         <div className="text-[var(--text-color-secondary)] text-sm">验证码</div>
-                        <div className="text-[var(--text-color)] text-3xl font-mono font-bold tracking-[0.3em]">{code}</div>
+                        <div className="text-[var(--text-color)] text-3xl font-mono font-bold tracking-[0.3em]">
+                            {code || '······'}
+                        </div>
                         {remoteUrl && (
                             <div className="text-[var(--text-color-secondary)] text-xs mt-1 break-all select-all">{remoteUrl}</div>
                         )}
@@ -191,7 +259,7 @@ export function RemoteImportTab({ onImportFile, onAddSubscription }: RemoteImpor
                 </div>
 
                 <p className="text-[var(--text-color-secondary)] text-xs mt-3">
-                    验证码 10 分钟内有效；若电视端重新生成了验证码，请在手机上重新提交。
+                    验证码默认 10 分钟内有效，本面板保持打开时会自动续期；若电视端重新生成了验证码，请在手机上重新提交。
                 </p>
 
                 {chooserNotice && (

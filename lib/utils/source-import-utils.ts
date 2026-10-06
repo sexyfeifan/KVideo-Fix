@@ -100,16 +100,33 @@ export function parseSourcesFromJson(jsonString: string): ImportResult {
 }
 
 /**
+ * Whether the URL points at another host than the current page.
+ * Host comparison uses URL parsing — a plain substring check would
+ * mis-classify external URLs that merely embed the host string.
+ */
+export function isExternalUrl(url: string): boolean {
+    if (typeof window === 'undefined') return false;
+    try {
+        const parsed = new URL(url, window.location.href);
+        return parsed.host !== window.location.host;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Fetch raw text from a URL.
  * External URLs fall back to /api/proxy when the direct fetch fails
  * (CORS) OR returns a non-ok status — plain static hosts often send no
  * CORS headers, which used to break subscription import entirely.
+ * The proxy endpoint is only available on self-hosted deployments
+ * (Docker/Node); managed/CF deploys disable it and the fallback fails.
  */
 export async function fetchTextFromUrl(url: string): Promise<string> {
     const headers = {
         'Accept': 'application/json',
     };
-    const isExternal = url.startsWith('http') && (typeof window !== 'undefined' && !url.includes(window.location.host));
+    const isExternal = isExternalUrl(url);
 
     let response: Response;
 
