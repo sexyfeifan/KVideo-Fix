@@ -13,7 +13,7 @@ import {
     REMOTE_IMPORT_CODE_LENGTH,
     REMOTE_IMPORT_PAYLOAD_MAX_BYTES,
     REMOTE_IMPORT_TOKEN_HEX_LENGTH,
-} from '@/lib/utils/remote-import';
+} from '../../../lib/utils/remote-import';
 
 test('generated codes match the expected shape', () => {
     for (let i = 0; i < 50; i += 1) {

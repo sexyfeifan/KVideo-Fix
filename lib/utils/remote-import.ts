@@ -1,6 +1,12 @@
 /**
  * 远程导入（第二屏配对）契约：电视端显示验证码 + 二维码，手机扫码后提交
  * 导入内容，电视端轮询取回。类型、常量与校验两端（API / 页面）共用。
+ *
+ * 安全模型：
+ * - 6 位验证码是「投递凭证」——手机端凭它提交内容（局域网信任模型）。
+ * - 32 位配对令牌是「取件凭证」——仅电视端持有，轮询/删除收件箱条目时
+ *   必须出示；即使验证码泄露，第三方也无法取走或删除已提交内容。
+ * - 服务端对每客户端（IP）限制注册/失败次数，对单条目限制坏载荷次数。
  */
 
 export type RemoteImportPayload =
@@ -12,35 +18,61 @@ export type RemoteImportPollResponse =
     | { status: 'waiting'; expiresAt: number }
     | { status: 'received'; payload: RemoteImportPayload };
 
+export type RemoteImportRegisterResponse = {
+    token: string;
+    expiresAt: number;
+};
+
 /** 不含 0/O/1/I，避免手输歧义 */
 export const REMOTE_IMPORT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const REMOTE_IMPORT_CODE_LENGTH = 6;
+/** 滑动过期：轮询会续期；10 分钟无活动后条目销毁 */
 export const REMOTE_IMPORT_TTL_MS = 10 * 60 * 1000;
 export const REMOTE_IMPORT_PAYLOAD_MAX_BYTES = 5 * 1024 * 1024;
+/** 单条目坏载荷上限，达到后条目销毁（轮询不会重置计数） */
 export const REMOTE_IMPORT_MAX_FAILED_ATTEMPTS = 15;
 export const REMOTE_IMPORT_MAX_ENTRIES = 50;
+export const REMOTE_IMPORT_TOKEN_HEX_LENGTH = 32;
+
+/** 每客户端（IP）在同一窗口内允许的注册次数 */
+export const REMOTE_IMPORT_REGISTER_MAX_PER_WINDOW = 20;
+/** 每客户端（IP）在同一窗口内允许的失败次数（猜码/坏载荷），达到后 429 */
+export const REMOTE_IMPORT_CLIENT_MAX_FAILURES = 10;
+export const REMOTE_IMPORT_CLIENT_WINDOW_MS = 10 * 60 * 1000;
 
 /**
- * 生成随机验证码。用 getRandomValues 而非 randomUUID：
- * 电视 WebView 内核较老（Chrome 66–74）且页面是 http 明文源。
+ * 生成随机验证码。getRandomValues 在 http 明文源与旧 WebView
+ * （Chrome 37+）上都可用，因此不再保留 Math.random 回退——弱随机
+ * 会让验证码可以被预测。
  */
 export function generateRemoteImportCode(): string {
     const alphabet = REMOTE_IMPORT_CODE_ALPHABET;
-    const bytes = new Uint8Array(REMOTE_IMPORT_CODE_LENGTH);
-
-    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
-        crypto.getRandomValues(bytes);
-    } else {
-        for (let i = 0; i < bytes.length; i += 1) {
-            bytes[i] = Math.floor(Math.random() * 256);
-        }
+    const code = randomBytes(REMOTE_IMPORT_CODE_LENGTH);
+    let out = '';
+    for (let i = 0; i < code.length; i += 1) {
+        out += alphabet[code[i] % alphabet.length];
     }
+    return out;
+}
 
-    let code = '';
+/** 生成取件令牌（128 位随机，十六进制表示） */
+export function generatePairingToken(): string {
+    const bytes = randomBytes(REMOTE_IMPORT_TOKEN_HEX_LENGTH / 2);
+    let hex = '';
     for (let i = 0; i < bytes.length; i += 1) {
-        code += alphabet[bytes[i] % alphabet.length];
+        hex += bytes[i].toString(16).padStart(2, '0');
     }
-    return code;
+    return hex;
+}
+
+function randomBytes(length: number): Uint8Array {
+    const bytes = new Uint8Array(length);
+    const webCrypto = (globalThis as { crypto?: Crypto }).crypto;
+    if (!webCrypto || typeof webCrypto.getRandomValues !== 'function') {
+        throw new Error('crypto_unavailable');
+    }
+    webCrypto.getRandomValues(bytes);
+    return bytes;
 }
 
 export function isValidRemoteImportCode(code: unknown): code is string {
@@ -53,6 +85,12 @@ export function isValidRemoteImportCode(code: unknown): code is string {
         }
     }
     return true;
+}
+
+const TOKEN_PATTERN = new RegExp(`^[0-9a-f]{${REMOTE_IMPORT_TOKEN_HEX_LENGTH}}$`);
+
+export function isValidPairingToken(token: unknown): token is string {
+    return typeof token === 'string' && TOKEN_PATTERN.test(token);
 }
 
 export function buildRemoteImportUrl(origin: string, code: string): string {
@@ -82,7 +120,12 @@ export function validateRemoteImportPayload(raw: unknown): RemoteImportPayload |
     return null;
 }
 
+/** UTF-8 字节长度（与 REMOTE_IMPORT_PAYLOAD_MAX_BYTES 同一单位） */
+export function utf8ByteLength(text: string): number {
+    return new TextEncoder().encode(text).length;
+}
+
 export function remoteImportPayloadSize(payload: RemoteImportPayload): number {
-    if (payload.type === 'url') return payload.url.length;
-    return payload.content.length;
+    if (payload.type === 'url') return utf8ByteLength(payload.url);
+    return utf8ByteLength(payload.content);
 }

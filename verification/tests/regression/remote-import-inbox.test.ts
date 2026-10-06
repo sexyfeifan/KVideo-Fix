@@ -13,7 +13,7 @@ import {
     resetInboxStore,
     takePayload,
     tryConsumeRegisterQuota,
-} from '@/lib/server/remote-import-inbox';
+} from '../../../lib/server/remote-import-inbox';
 import {
     REMOTE_IMPORT_CLIENT_MAX_FAILURES,
     REMOTE_IMPORT_CLIENT_WINDOW_MS,
@@ -21,7 +21,7 @@ import {
     REMOTE_IMPORT_MAX_FAILED_ATTEMPTS,
     REMOTE_IMPORT_REGISTER_MAX_PER_WINDOW,
     REMOTE_IMPORT_TTL_MS,
-} from '@/lib/utils/remote-import';
+} from '../../../lib/utils/remote-import';
 
 const TOKEN = 'a'.repeat(32);
 const OTHER_TOKEN = 'b'.repeat(32);
