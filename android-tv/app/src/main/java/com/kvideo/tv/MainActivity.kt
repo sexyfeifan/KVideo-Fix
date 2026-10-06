@@ -1,7 +1,9 @@
 package com.kvideo.tv
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Rect
@@ -17,6 +19,7 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebChromeClient.CustomViewCallback
 import android.webkit.WebSettings
@@ -27,6 +30,8 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -58,6 +63,18 @@ class MainActivity : ComponentActivity() {
     /** Mirrors the web page's edit state so Back/D-pad can escape web inputs. */
     @Volatile
     private var isWebEditing = false
+
+    /** WebView 文件选择回调：必须恰好回传一次（取消时回 null）。 */
+    private var pendingFileChooserCallback: ValueCallback<Array<Uri>>? = null
+
+    private val fileChooserLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = pendingFileChooserCallback ?: return@registerForActivityResult
+            pendingFileChooserCallback = null
+            callback.onReceiveValue(
+                WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+            )
+        }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -157,6 +174,37 @@ class MainActivity : ComponentActivity() {
 
                 override fun onHideCustomView() {
                     exitCustomFullscreen()
+                }
+
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    // 契约：每次 onShowFileChooser 必须恰好回调一次
+                    pendingFileChooserCallback?.onReceiveValue(null)
+                    val callback = filePathCallback ?: return true
+                    pendingFileChooserCallback = callback
+
+                    val intent = fileChooserParams?.createIntent()
+                        ?: Intent(Intent.ACTION_GET_CONTENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("*/*")
+
+                    return try {
+                        fileChooserLauncher.launch(intent)
+                        true
+                    } catch (error: ActivityNotFoundException) {
+                        pendingFileChooserCallback = null
+                        callback.onReceiveValue(null)
+                        notifyFileChooserUnavailable()
+                        true
+                    } catch (error: Exception) {
+                        Log.w(TAG, "Failed to launch file chooser", error)
+                        pendingFileChooserCallback = null
+                        callback.onReceiveValue(null)
+                        true
+                    }
                 }
             }
             addJavascriptInterface(AndroidPlayerBridge(), "KVideoAndroid")
@@ -275,6 +323,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         exitCustomFullscreen()
+        pendingFileChooserCallback?.onReceiveValue(null)
+        pendingFileChooserCallback = null
         webView.destroy()
         super.onDestroy()
     }
@@ -454,6 +504,17 @@ class MainActivity : ComponentActivity() {
         }
 
         return packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+    }
+
+    private fun notifyFileChooserUnavailable() {
+        val js = "window.dispatchEvent(new CustomEvent('kvideo-file-chooser-unavailable'))"
+        webView.post {
+            try {
+                webView.evaluateJavascript(js, null)
+            } catch (error: Throwable) {
+                Log.w(TAG, "Failed to dispatch file-chooser-unavailable event", error)
+            }
+        }
     }
 
     private fun dispatchPictureInPictureChange(isInPictureInPictureMode: Boolean) {

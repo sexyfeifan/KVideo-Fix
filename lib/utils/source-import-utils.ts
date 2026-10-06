@@ -100,9 +100,12 @@ export function parseSourcesFromJson(jsonString: string): ImportResult {
 }
 
 /**
- * Fetch and parse sources from a URL
+ * Fetch raw text from a URL.
+ * External URLs fall back to /api/proxy when the direct fetch fails
+ * (CORS) OR returns a non-ok status — plain static hosts often send no
+ * CORS headers, which used to break subscription import entirely.
  */
-export async function fetchSourcesFromUrl(url: string): Promise<ImportResult> {
+export async function fetchTextFromUrl(url: string): Promise<string> {
     const headers = {
         'Accept': 'application/json',
     };
@@ -112,6 +115,9 @@ export async function fetchSourcesFromUrl(url: string): Promise<ImportResult> {
 
     try {
         response = await fetch(url, { headers });
+        if (!response.ok && isExternal) {
+            throw new Error(`direct_not_ok_${response.status}`);
+        }
     } catch (directError) {
         if (!isExternal) {
             throw directError;
@@ -126,7 +132,14 @@ export async function fetchSourcesFromUrl(url: string): Promise<ImportResult> {
         throw new Error(`获取失败: ${response.status} ${response.statusText}`);
     }
 
-    const text = await response.text();
+    return response.text();
+}
+
+/**
+ * Fetch and parse sources from a URL
+ */
+export async function fetchSourcesFromUrl(url: string): Promise<ImportResult> {
+    const text = await fetchTextFromUrl(url);
     return parseSourcesFromJson(text);
 }
 

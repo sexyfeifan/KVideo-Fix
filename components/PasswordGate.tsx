@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Lock, User } from 'lucide-react';
 import { clearSession, getSession, setSession, type AuthSession } from '@/lib/store/auth-store';
 import { resolvePasswordGateState } from '@/lib/auth/password-gate-state';
@@ -113,6 +114,11 @@ export function PasswordGate({
   hasAuth: boolean;
 }) {
   useSubscriptionSync();
+
+  // 远程导入配对页（手机扫码进入）不走密码门：URL 里的 6 位验证码即凭证，
+  // 否则手机端还要输入管理密码，配对流程失去意义。页面本身只做提交、不展示数据。
+  const pathname = usePathname();
+  const isRemoteImportPage = pathname === '/remote-import';
 
   const [isLocked, setIsLocked] = useState(true);
   const [username, setUsername] = useState('');
@@ -232,6 +238,11 @@ export function PasswordGate({
   };
 
   if (!isClient) return null;
+
+  // 远程导入配对页跳过密码门（旁路必须在 isClient 之后：
+  // SSR 阶段保持 null，否则布局里的 ScrollPositionManager 会在预渲染时
+  // 触发 useSearchParams 的 CSR bailout 错误）
+  if (isRemoteImportPage) return <>{children}</>;
 
   if (!isLocked) {
     return <>{children}</>;

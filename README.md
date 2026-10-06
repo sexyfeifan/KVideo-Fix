@@ -1,15 +1,18 @@
 # KVideo-Fix
 
-> 个人修复分支：基于上游 [KuekHaoYang/KVideo](https://github.com/KuekHaoYang/KVideo)（`831aa7b`），修复安卓电视遥控器（D-pad）在输入框内"光标困住、无法退出"的问题。
+> 个人修复分支：基于上游 [KuekHaoYang/KVideo](https://github.com/KuekHaoYang/KVideo)（`831aa7b`），针对安卓电视遥控器使用体验做了修复与增强。
 
-**修复内容（TV 遥控器输入框陷阱）：**
+**修复 / 增强内容：**
 
-1. **Web 端**（`lib/hooks/useSpatialNavigation.ts`、`lib/hooks/useTVDetection.ts`）：
+1. **TV 遥控器输入框陷阱**（Web 端 `lib/hooks/useSpatialNavigation.ts`、`lib/hooks/useTVDetection.ts`）：
    - 空间导航覆盖所有可交互元素（输入框/按钮/链接），不再只认 `[data-focusable]`——方向键可从「源名称」逐级走到「接口地址」；
    - 电视模式下文本框改为**确认步序**：焦点仅"选中"（只读），按 OK 进入编辑，↑/↓ 或 Esc 退出编辑继续移动；
    - Android TV 壳（`window.KVideoAndroid`）自动开启 TV 模式。
 2. **安卓电视壳**（`android-tv/`）：设置页同样采用"选中 → OK 编辑 → ↓/返回退出"模型；`DpadEditText` 在输入法吞键前拦截返回/方向键，网页输入框编辑时由原生层转发 ↓/↑/返回（`MainActivity.dispatchKeyEvent`），光标永不困住。
-3. **预构建 APK**：[`dist/kvideo-tv.apk`](dist/kvideo-tv.apk)（自签名；安装前需卸载签名不同的旧版）。构建：`android-tv/` 下 `./gradlew assembleRelease -PkvideoUrl=<服务器地址>`。
+3. **电视端远程导入（二维码第二屏配对）**：导入设置新增「远程导入」标签页——电视显示二维码 + 6 位验证码，手机扫码打开 `/remote-import` 配对页，在手机上粘贴订阅链接 / 上传 JSON 备份 / 粘贴 JSON 提交，电视自动导入，全程无需遥控器打字。收件箱 API `/api/remote-import`（注册于首次轮询、10 分钟滑动过期、单次投递、失败次数与条目数上限）。安全模型：6 位验证码即凭证，仅建议在局域网内使用。**注意：该路由为 nodejs runtime（进程内收件箱），仅支持 Docker/Node 自托管部署，Cloudflare Pages 构建（`pages:build`）不可用。**
+4. **文件导入修复**：Android WebView 实现了 `onShowFileChooser`（此前「文件导入」按钮点了无反应）；设备无文件选择器时给出改用「远程导入」的提示。
+5. **外链导入健壮性**：外部 URL 直连失败或返回非 2xx 时回退 `/api/proxy`（静态文件站通常不带 CORS 头，此前订阅链接导入会直接失败）。
+6. **预构建 APK**：[`dist/kvideo-tv.apk`](dist/kvideo-tv.apk)（自签名；安装前需卸载签名不同的旧版）。构建：`android-tv/` 下 `./gradlew assembleRelease -PkvideoUrl=<服务器地址>`。
 
 以下为上游原文档。
 

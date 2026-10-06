@@ -1,8 +1,10 @@
 'use client';
 
+export type ImportTabId = 'file' | 'link' | 'subscription' | 'json' | 'remote';
+
 interface ImportModalTabsProps {
-    activeTab: 'file' | 'link' | 'subscription' | 'json';
-    onTabChange: (tab: 'file' | 'link' | 'subscription' | 'json') => void;
+    activeTab: ImportTabId;
+    onTabChange: (tab: ImportTabId) => void;
 }
 
 export function ImportModalTabs({ activeTab, onTabChange }: ImportModalTabsProps) {
@@ -11,6 +13,7 @@ export function ImportModalTabs({ activeTab, onTabChange }: ImportModalTabsProps
         { id: 'link', label: '链接导入' },
         { id: 'subscription', label: '订阅管理' },
         { id: 'json', label: 'JSON' },
+        { id: 'remote', label: '远程导入' },
     ] as const;
 
     return (
@@ -19,6 +22,7 @@ export function ImportModalTabs({ activeTab, onTabChange }: ImportModalTabsProps
                 {tabs.map((tab) => (
                     <button
                         key={tab.id}
+                        data-focusable
                         onClick={() => onTabChange(tab.id)}
                         className={`
               relative px-5 py-3 text-sm font-medium transition-colors duration-200

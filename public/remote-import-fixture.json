@@ -1,0 +1,16 @@
+[
+  {
+    "id": "fixture-dummy-1",
+    "name": "测试占位源一",
+    "baseUrl": "http://127.0.0.1:9/unused",
+    "searchPath": "/provide/vod",
+    "detailPath": "/provide/vod"
+  },
+  {
+    "id": "fixture-dummy-2",
+    "name": "测试占位源二",
+    "baseUrl": "http://127.0.0.1:9/unused",
+    "searchPath": "/provide/vod",
+    "detailPath": "/provide/vod"
+  }
+]

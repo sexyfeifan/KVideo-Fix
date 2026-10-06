@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface FileImportTabProps {
     onImport: (content: string) => Promise<boolean> | boolean;
@@ -9,7 +9,15 @@ interface FileImportTabProps {
 export function FileImportTab({ onImport }: FileImportTabProps) {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
+    const [chooserUnavailable, setChooserUnavailable] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Android 壳在设备没有文件选择器时派发此事件（部分电视盒子）
+    useEffect(() => {
+        const handler = () => setChooserUnavailable(true);
+        window.addEventListener('kvideo-file-chooser-unavailable', handler);
+        return () => window.removeEventListener('kvideo-file-chooser-unavailable', handler);
+    }, []);
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -61,6 +69,7 @@ export function FileImportTab({ onImport }: FileImportTabProps) {
                 />
 
                 <button
+                    data-focusable
                     onClick={() => fileInputRef.current?.click()}
                     disabled={success}
                     className="w-full px-6 py-8 rounded-[var(--radius-2xl)] bg-[color-mix(in_srgb,var(--glass-bg)_50%,transparent)] border-2 border-dashed border-[var(--glass-border)] text-[var(--text-color)] hover:bg-[color-mix(in_srgb,var(--accent-color)_5%,transparent)] hover:border-[var(--accent-color)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 group"
@@ -80,6 +89,12 @@ export function FileImportTab({ onImport }: FileImportTabProps) {
                 {error && (
                     <div className="mt-4 text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-[var(--radius-2xl)] px-4 py-3 border border-red-100 dark:border-red-900/30">
                         {error}
+                    </div>
+                )}
+
+                {chooserUnavailable && !error && (
+                    <div className="mt-4 text-sm text-amber-600 bg-amber-50 dark:bg-amber-900/20 rounded-[var(--radius-2xl)] px-4 py-3 border border-amber-100 dark:border-amber-900/30">
+                        此设备没有可用的文件管理器，请改用「远程导入」标签页，用手机发送文件。
                     </div>
                 )}
 

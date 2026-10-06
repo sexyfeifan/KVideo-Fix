@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ImportModalTabs } from './import/ImportModalTabs';
+import { useState } from 'react';
+import { ImportModalTabs, type ImportTabId } from './import/ImportModalTabs';
 import { FileImportTab } from './import/FileImportTab';
 import { LinkImportTab } from './import/LinkImportTab';
 import { SubscriptionImportTab } from './import/SubscriptionImportTab';
 import { JsonImportTab } from './import/JsonImportTab';
+import { RemoteImportTab } from './import/RemoteImportTab';
 import type { ImportResult } from '@/lib/utils/source-import-utils';
 import type { SourceSubscription } from '@/lib/types';
 import { ModalBackdrop } from '@/components/ui/ModalBackdrop';
@@ -34,14 +35,16 @@ export function ImportModal({
   onRemoveSubscription,
   onRefreshSubscription
 }: ImportModalProps) {
-  const [activeTab, setActiveTab] = useState<'file' | 'link' | 'subscription' | 'json'>('file');
+  const [activeTab, setActiveTab] = useState<ImportTabId>('file');
 
-  // Reset tab on open
-  useEffect(() => {
+  // Reset tab on open（渲染期调整状态，避免 effect 里同步 setState）
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
     if (isOpen) {
       setActiveTab('file');
     }
-  }, [isOpen]);
+  }
 
   if (!isOpen) return null;
 
@@ -51,7 +54,7 @@ export function ImportModal({
 
       {/* Modal */}
       <div
-        className={`fixed top-1/2 left-1/2 z-[9999] w-[90%] max-w-md -translate-x-1/2 transition-all duration-300 ${isOpen
+        className={`fixed top-1/2 left-1/2 z-[9999] w-[90%] max-w-lg -translate-x-1/2 transition-all duration-300 ${isOpen
             ? 'opacity-100 -translate-y-1/2 scale-100'
             : 'opacity-0 -translate-y-[40%] scale-95 pointer-events-none'
           }`}
@@ -94,6 +97,13 @@ export function ImportModal({
 
             {activeTab === 'json' && (
               <JsonImportTab />
+            )}
+
+            {activeTab === 'remote' && (
+              <RemoteImportTab
+                onImportFile={onImportFile}
+                onAddSubscription={onAddSubscription}
+              />
             )}
           </div>
         </div>
