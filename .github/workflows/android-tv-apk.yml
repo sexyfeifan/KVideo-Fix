@@ -12,7 +12,7 @@ on:
         required: false
         type: string
       kvideo_url:
-        description: "Optional default KVideo URL baked into the APK"
+        description: "Optional default KVideo URL baked into the APK (leave empty to prompt on first launch)"
         required: false
         type: string
 
@@ -52,14 +52,40 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug -PkvideoUrl="$KVIDEO_URL"
+      - name: Restore release keystore
+        env:
+          KVIDEO_KEYSTORE_BASE64: ${{ secrets.KVIDEO_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KVIDEO_KEYSTORE_BASE64" ]; then
+            printf '%s' "$KVIDEO_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/kvideo-release.jks"
+            echo "KVIDEO_KEYSTORE_FILE=$RUNNER_TEMP/kvideo-release.jks" >> "$GITHUB_ENV"
+            echo "Signed release build (keystore restored from secrets)."
+          else
+            echo "No KVIDEO_KEYSTORE_BASE64 secret: producing an unsigned release APK (not directly installable)."
+          fi
+
+      - name: Build release APK
+        env:
+          KVIDEO_KEYSTORE_PASSWORD: ${{ secrets.KVIDEO_KEYSTORE_PASSWORD }}
+          KVIDEO_KEY_ALIAS: ${{ secrets.KVIDEO_KEY_ALIAS }}
+          KVIDEO_KEY_PASSWORD: ${{ secrets.KVIDEO_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assembleRelease -PkvideoUrl="$KVIDEO_URL"
+
+      - name: Locate APK
+        id: apk
+        run: |
+          apk="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$apk" ]; then
+            apk="$(ls app/build/outputs/apk/release/*.apk | head -1)"
+          fi
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+          ls -la app/build/outputs/apk/release/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: kvideo-android-tv-apk
-          path: android-tv/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
 
       - name: Publish GitHub release
@@ -69,13 +95,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_TITLE: ${{ inputs.release_title }}
+          APK_PATH: ${{ steps.apk.outputs.path }}
         run: |
           release_notes="$(mktemp)"
           effective_title="${RELEASE_TITLE:-Android TV APK ${RELEASE_TAG}}"
           default_url_text="${KVIDEO_URL:-未预置，首次启动时手动填写}"
+          sign_text="已用仓库 secrets 签名"
+          if [ -z "${KVIDEO_KEYSTORE_FILE:-}" ]; then
+            sign_text="未签名（配置 KVIDEO_KEYSTORE_BASE64 等 secrets 后可产出可安装包）"
+          fi
 
           cat >"$release_notes" <<EOF
-          预构建的 Android TV APK。
+          预构建的 Android TV APK（release）。
 
           使用方式：
           1. 下载并侧载安装 APK
@@ -84,13 +115,14 @@ jobs:
 
           构建提交：$GITHUB_SHA
           默认地址：$default_url_text
+          签名状态：$sign_text
           EOF
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "android-tv/app/build/outputs/apk/debug/app-debug.apk#KVideo-AndroidTV.apk" --clobber
+            gh release upload "$RELEASE_TAG" "$APK_PATH#KVideo-AndroidTV.apk" --clobber
             gh release edit "$RELEASE_TAG" --title "$effective_title" --notes-file "$release_notes"
           else
-            gh release create "$RELEASE_TAG" "android-tv/app/build/outputs/apk/debug/app-debug.apk#KVideo-AndroidTV.apk" \
+            gh release create "$RELEASE_TAG" "$APK_PATH#KVideo-AndroidTV.apk" \
               --title "$effective_title" \
               --notes-file "$release_notes" \
               --target "$GITHUB_SHA"

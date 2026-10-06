@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
@@ -141,7 +142,14 @@ class MainActivity : ComponentActivity() {
                 databaseEnabled = true
             }
 
-            webViewClient = WebViewClient()
+            webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    // 页面导航/reload 后 JS 侧的编辑态已丢失，复位原生标记，
+                    // 否则第一次返回/方向键会被 dispatchKeyEvent 吞掉。
+                    isWebEditing = false
+                    super.onPageStarted(view, url, favicon)
+                }
+            }
             webChromeClient = object : WebChromeClient() {
                 override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                     if (view == null || callback == null) {
