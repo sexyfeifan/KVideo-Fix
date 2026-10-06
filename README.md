@@ -8,11 +8,19 @@
    - 空间导航覆盖所有可交互元素（输入框/按钮/链接），不再只认 `[data-focusable]`——方向键可从「源名称」逐级走到「接口地址」；
    - 电视模式下文本框改为**确认步序**：焦点仅"选中"（只读），按 OK 进入编辑，↑/↓ 或 Esc 退出编辑继续移动；
    - Android TV 壳（`window.KVideoAndroid`）自动开启 TV 模式。
-2. **安卓电视壳**（`android-tv/`）：设置页同样采用"选中 → OK 编辑 → ↓/返回退出"模型；`DpadEditText` 在输入法吞键前拦截返回/方向键，网页输入框编辑时由原生层转发 ↓/↑/返回（`MainActivity.dispatchKeyEvent`），光标永不困住。
-3. **电视端远程导入（二维码第二屏配对）**：导入设置新增「远程导入」标签页——电视显示二维码 + 6 位验证码，手机扫码打开 `/remote-import` 配对页，在手机上粘贴订阅链接 / 上传 JSON 备份 / 粘贴 JSON 提交，电视自动导入，全程无需遥控器打字。收件箱 API `/api/remote-import`（注册于首次轮询、10 分钟滑动过期、单次投递、失败次数与条目数上限）。安全模型：6 位验证码即凭证，仅建议在局域网内使用。**注意：该路由为 nodejs runtime（进程内收件箱），仅支持 Docker/Node 自托管部署，Cloudflare Pages 构建（`pages:build`）不可用。**
+2. **安卓电视壳**（`android-tv/`）：设置页同样采用"选中 → OK 编辑 → ↓/返回退出"模型；`DpadEditText` 在输入法吞键前拦截返回/方向键，网页输入框编辑时由原生层转发 ↓/↑/返回（`MainActivity.dispatchKeyEvent`），光标永不困住；页面加载/刷新时原生编辑态标记复位，返回键不会被吞。
+3. **电视端远程导入（二维码第二屏配对）**：导入设置新增「远程导入」标签页——电视显示二维码 + 6 位验证码，手机扫码打开 `/remote-import` 配对页，在手机上粘贴订阅链接 / 上传 JSON 备份 / 粘贴 JSON 提交，电视自动导入，全程无需遥控器打字。
+   - 收件箱 API `/api/remote-import`（10 分钟滑动过期、单次投递、条目数上限）：电视端注册配对后取得 128 位**取件令牌**，轮询/取件/注销都必须出示令牌——验证码泄露也无法取走或删除他人提交的内容。
+   - 限流：每客户端（IP）注册次数、猜码/坏载荷失败次数都有窗口上限，达到后 429；单条目坏载荷累计到上限即销毁条目（轮询不会重置计数）；载荷大小上限 5MB，在解析 JSON 前按字节检查。
+   - 验证码只由 `crypto.getRandomValues` 生成（无弱随机回退）。
+   - **部署要求**：收件箱保存在进程内存，要求单进程自托管（Docker/Node）。Cloudflare Pages 构建（`pages:build`）可以正常通过，但多隔离环境下内存不互通，**远程导入功能不支持 CF Pages**，请改用「文件导入 / JSON 导入」。内容经 KVideo 服务器中转，服务器部署在公网时请勿使用本功能。
 4. **文件导入修复**：Android WebView 实现了 `onShowFileChooser`（此前「文件导入」按钮点了无反应）；设备无文件选择器时给出改用「远程导入」的提示。
-5. **外链导入健壮性**：外部 URL 直连失败或返回非 2xx 时回退 `/api/proxy`（静态文件站通常不带 CORS 头，此前订阅链接导入会直接失败）。
-6. **预构建 APK**：[`dist/kvideo-tv.apk`](dist/kvideo-tv.apk)（自签名；安装前需卸载签名不同的旧版）。构建：`android-tv/` 下 `./gradlew assembleRelease -PkvideoUrl=<服务器地址>`。
+5. **外链导入健壮性**：外部 URL 直连失败或返回非 2xx 时回退 `/api/proxy`（静态文件站通常不带 CORS 头，此前订阅链接导入会直接失败）。**注意**：`/api/proxy` 仅在自托管（Docker/Node）部署开放，托管/CF/Vercel 部署会返回 403，此回退在那里不生效。
+6. **Android TV APK**：不把预构建二进制提交进仓库（旧 `dist/kvideo-tv.apk` 曾烘焙构建机内网地址且签名不可复现，已移除）。构建方式：
+   - **CI**：`Android TV APK` 工作流（Actions → Android TV APK → Run workflow）产出 release APK；配置 `KVIDEO_KEYSTORE_BASE64` / `KVIDEO_KEYSTORE_PASSWORD` / `KVIDEO_KEY_ALIAS` / `KVIDEO_KEY_PASSWORD` 四个 secrets 后产出可安装的签名包，否则为未签名包；填 `release_tag` 可直接发布到 GitHub Release。
+   - **本地**：`android-tv/` 下 `./gradlew assembleRelease -PkvideoUrl=<服务器地址>`；签名通过 `KVIDEO_KEYSTORE_FILE` 等环境变量（或 `-PkvideoKeystoreFile=...`）提供，未提供时产出未签名 release（无法直接安装）。构建私网地址时 Gradle 会输出警告，避免再次把内网 IP 发给所有安装者。`versionCode`/`versionName` 见 `android-tv/app/build.gradle.kts`。
+
+**测试**：`npm test`（132 项，含远程导入收件箱/契约/路由与外链导入回退的回归）；fork 新增模块同时纳入 `verification/tests/regression/`（`./verification/run` 的严格验证链），其 lib/API 覆盖率为 100%。注意：验证链的应用级 100% 覆盖率门禁（`static.code-coverage`）在上游基线即不满足（大量上游文件无回归测试），属上游既有状态。
 
 以下为上游原文档。
 

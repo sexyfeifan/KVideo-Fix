@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.9.21 - 2026-10-07
+
+本版本为 KVideo-Fix 分支的修复与收尾（基于上游 4.9.20）。
+
+- **远程导入安全加固**：电视端注册配对后取得 128 位取件令牌，轮询/取件/注销必须出示令牌；GET 轮询不再创建或复活收件箱条目，坏载荷失败计数不会被轮询清零（此前「失败次数上限」永远打不满）。
+- **限流与输入校验**：每客户端（IP）注册次数与猜码/坏载荷失败次数分窗口限流，超限 429；载荷大小在 JSON 解析前按 UTF-8 字节检查（此前 5MB 上限在解析后才生效，且按 UTF-16 字符计数）；验证码只由 `crypto.getRandomValues` 生成，移除 `Math.random` 回退。
+- **Cloudflare Pages 构建修复**：收件箱 API 合并进单一路由并声明 edge runtime——此前 `export const runtime = 'nodejs'` 会让 `pages:build` 整体中止。单进程自托管（Docker/Node）下远程导入完整可用（已做端到端验证）；CF Pages 等多隔离部署内存不互通，该功能不支持，构建可通过。
+- **配对页/面板体验**：手机端错误按状态精确映射（失效/待处理/过大/限流/格式），补文件读取失败处理与空文件校验，删除死代码 410 分支，待处理状态改用警示样式；「链接和文件都只在局域网内传输」改为如实描述服务器中转；「验证码 10 分钟内有效」改为滑动过期语义。电视面板对注册失败/限流/验证码失效给出明确提示，成功文案不再误称「正在刷新」（订阅导入并不触发刷新）；验证码与配对地址只在客户端生成，消除 SSR/hydration 不一致。
+- **外链导入**：内外部 URL 判定改为解析后 host 比较（此前 `url.includes(host)` 会把嵌了本机 host 字符串的外部 URL 误判为内部）；文档注明 `/api/proxy` 回退仅自托管可用。
+- **Android TV 壳**：页面加载/刷新时复位 `isWebEditing`，避免第一次返回/方向键被 `dispatchKeyEvent` 吞掉；Gradle `versionCode 2` / `versionName 1.1.0`，release 签名支持环境变量（`KVIDEO_KEYSTORE_FILE` 等），烘焙私网地址时输出警告。
+- **APK 产线收尾**：移除烘焙了构建机内网地址（`192.168.x.x`）且签名不可复现的 `dist/kvideo-tv.apk`；`Android TV APK` 工作流改产 release 包，支持 secrets 签名与 GitHub Release 发布，未提供 keystore 时明确产出未签名包。
+- **测试**：新增远程导入收件箱/契约/路由与外链导入回归共 48 项（`npm test` 共 132 项全通过），并同步纳入 `verification/tests/regression/`；fork 的 `lib/` 与 `/api/remote-import` 模块 c8 覆盖率 100%（应用级 100% 门禁在上游基线即不满足，属上游既有状态）。
+
 ## 4.9.20 - 2026-08-16
 
 - 占位海报 SVG 现在根据系统 `prefers-color-scheme` 自动切换浅色与深色配色（#241）。

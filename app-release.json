@@ -1,11 +1,26 @@
 {
   "repository": {
-    "owner": "KuekHaoYang",
-    "name": "KVideo",
+    "owner": "sexyfeifan",
+    "name": "KVideo-Fix",
     "branch": "main"
   },
-  "currentVersion": "4.9.20",
+  "currentVersion": "4.9.21",
   "releases": [
+    {
+      "version": "4.9.21",
+      "publishedAt": "2026-10-07",
+      "title": "远程导入安全加固、CF Pages 构建修复与 APK 产线收尾",
+      "notes": [
+        "远程导入改为注册签发 128 位取件令牌：轮询、取件、注销都必须出示令牌，验证码泄露无法取走或删除他人提交的内容；GET 轮询不再创建/复活收件箱条目，失败计数不会被轮询清零。",
+        "新增每客户端注册/失败次数限流（窗口内超限返回 429）；载荷大小在 JSON 解析前按 UTF-8 字节检查，单位与上限定义一致；验证码只由 crypto.getRandomValues 生成，移除 Math.random 弱随机回退。",
+        "收件箱路由合并为单一路由文件并声明 edge runtime：Cloudflare Pages 构建（pages:build）不再整体失败；单进程自托管（Docker/Node）远程导入完整可用，CF Pages 多隔离环境不支持该功能。",
+        "手机配对页错误信息按状态精确映射（失效/待处理/过大/限流/格式），文件读取失败有提示，「仅局域网传输」文案改为如实描述服务器中转；电视面板对限流/失效/无法识别给出明确反馈，验证码文案改为滑动过期。",
+        "外链导入的内外部 URL 判定改为解析后的 host 比较，不再被子串命中误判；fetchTextFromUrl 的 /api/proxy 回退在文档中标注仅自托管可用。",
+        "Android TV 壳：页面加载时复位原生编辑态标记，避免刷新后第一次返回/方向键被吞；Gradle 版本升至 1.1.0（versionCode 2）、支持环境变量签名、烘焙私网地址时输出警告。",
+        "移除烘焙了构建机内网地址且签名不可复现的 dist/kvideo-tv.apk；Android TV APK 工作流改产 release 包并支持 secrets 签名与 Release 发布。",
+        "远程导入与外链导入回归测试纳入 npm test 与 verification/tests/regression（新增 48 项，共 132 项），fork 的 lib/API 模块覆盖率达到 100%。"
+      ]
+    },
     {
       "version": "4.9.20",
       "publishedAt": "2026-08-16",
