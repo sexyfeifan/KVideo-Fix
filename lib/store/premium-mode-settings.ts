@@ -137,6 +137,7 @@ export function getModeSettings(isPremium: boolean): ModeSettings {
   }
   // For normal mode, extract ModeSettings-shaped data from the main settingsStore
   // Import dynamically to avoid circular dependencies
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate: CommonJS require keeps this lazy and breaks the settings-store circular import
   const { settingsStore } = require('./settings-store');
   const s = settingsStore.getSettings();
   return {
@@ -172,6 +173,7 @@ export function getModeSettingsStore(isPremium: boolean) {
     return premiumModeSettingsStore;
   }
   // Return a wrapper around the main settingsStore that conforms to the same interface
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate: CommonJS require keeps this lazy and breaks the settings-store circular import
   const { settingsStore } = require('./settings-store');
   return {
     getSettings: () => getModeSettings(false),

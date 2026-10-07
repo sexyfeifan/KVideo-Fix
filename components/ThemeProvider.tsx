@@ -56,10 +56,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Check if View Transition API is supported
-      // @ts-ignore - View Transition API is experimental
       if (typeof document.startViewTransition === 'function') {
         try {
-          // @ts-ignore
           transitionRef.current = document.startViewTransition(() => {
             applyTheme();
           });

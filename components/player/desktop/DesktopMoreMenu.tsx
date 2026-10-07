@@ -283,7 +283,7 @@ export function DesktopMoreMenu({
                         right: `calc(100% - ${menuPosition.left}px + 10px)`,
                         left: 'auto'
                     } : {
-                        left: `${menuPosition.left + buttonRef.current?.offsetWidth! + 10}px`,
+                        left: `${menuPosition.left + (buttonRef.current?.offsetWidth ?? 0) + 10}px`,
                         right: 'auto'
                     }),
 
