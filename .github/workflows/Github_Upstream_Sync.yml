@@ -3,6 +3,7 @@ name: Upstream Sync
 permissions:
   contents: write
   pull-requests: write # Required to create the PR
+  actions: write # Required for the workflow-run cleanup step
 
 env:
   UPSTREAM_REPO: KuekHaoYang/KVideo
@@ -23,7 +24,8 @@ jobs:
   sync_latest_from_upstream:
     name: Sync latest commits from upstream repo
     runs-on: ubuntu-latest
-    if: ${{ github.event.repository.fork }}
+    # 本仓库是「独立克隆 + 新建仓库」的修复分支，不是 GitHub 意义上的 fork
+    # （repository.fork=false），所以不能用 fork 标记做门禁——否则永远跳过。
 
     steps:
       - name: Checkout target repo
@@ -46,7 +48,7 @@ jobs:
           # 3. Attempt Merge
           echo "Attempting to merge upstream/$UPSTREAM_BRANCH into $TARGET_BRANCH..."
           
-          if git merge upstream/$UPSTREAM_BRANCH; then
+          if git merge --no-edit upstream/$UPSTREAM_BRANCH; then
             echo "✅ Merge successful. Pushing changes..."
             git push origin $TARGET_BRANCH
           else
@@ -58,17 +60,22 @@ jobs:
             git push -f origin $SYNC_BRANCH
 
             # 5. Create Pull Request using GitHub CLI
-            # The '|| true' prevents failure if the PR already exists
-            gh pr create \
-              --title "🚨 Manual Sync Required: Conflicts with Upstream" \
-              --body "The automatic sync failed due to merge conflicts. This PR contains the latest upstream changes. Please resolve conflicts and merge manually." \
-              --head $SYNC_BRANCH \
-              --base $TARGET_BRANCH \
-              || echo "PR already exists or could not be created."
+            # 已有开着的同步 PR 就只更新分支；创建失败要报错，不能悄悄变绿
+            if gh pr list --head "$SYNC_BRANCH" --base "$TARGET_BRANCH" --state open | grep -q .; then
+              echo "Sync PR already open for $SYNC_BRANCH (branch refreshed with latest upstream)."
+            else
+              gh pr create \
+                --title "🚨 Manual Sync Required: Conflicts with Upstream" \
+                --body "The automatic sync failed due to merge conflicts. This PR contains the latest upstream changes. Please resolve conflicts and merge manually." \
+                --head $SYNC_BRANCH \
+                --base $TARGET_BRANCH \
+                || { echo "::error::Failed to create the upstream sync PR"; exit 1; }
+            fi
           fi
 
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
+        continue-on-error: true # 清理失败不拖垮同步结果
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
