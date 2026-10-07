@@ -20,7 +20,7 @@
    - **CI**：`Android TV APK` 工作流（Actions → Android TV APK → Run workflow）产出 release APK；配置 `KVIDEO_KEYSTORE_BASE64` / `KVIDEO_KEYSTORE_PASSWORD` / `KVIDEO_KEY_ALIAS` / `KVIDEO_KEY_PASSWORD` 四个 secrets 后产出可安装的签名包，否则为未签名包；填 `release_tag` 可直接发布到 GitHub Release。
    - **本地**：`android-tv/` 下 `./gradlew assembleRelease -PkvideoUrl=<服务器地址>`；签名通过 `KVIDEO_KEYSTORE_FILE` 等环境变量（或 `-PkvideoKeystoreFile=...`）提供，未提供时产出未签名 release（无法直接安装）。构建私网地址时 Gradle 会输出警告，避免再次把内网 IP 发给所有安装者。`versionCode`/`versionName` 见 `android-tv/app/build.gradle.kts`。
 7. **CI 产线**：
-   - **CI**：fork 补上 `CI` 工作流（lint / 单测 / 生产构建 / `pages:build`），每次 push 与 PR 自动验证构建链路。
+   - **CI**：fork 补上 `CI` 工作流（lint / 单测 / 生产构建 / `pages:build`），每次 push 与 PR 自动验证构建链路。lint 门禁已清零：真实错误（`@ts-ignore`、可选链非空断言、JSX 未转义等）直接修复；上游基线债（`no-explicit-any` 与 react-hooks 编译器规则）降为 warn 保留可见性。注意：本地 Windows 直接跑 `pages:build` 可能因 Vercel CLI 的 Windows 兼容问题失败（该 CLI 自带警告），以 CI 的 Linux 结果为准。
    - **Docker Publish**：fork 默认没有上游的 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`（fork 不继承 secrets），工作流改为无 secrets 时做**仅构建验证**（不推送，不再整条流水线报错），配好 secrets 后自动转为多架构发布。镜像名默认 `<owner>/kvideo`（小写），不再硬编码上游的 `kuekhaoyang/kvideo`，可用仓库变量 `DOCKERHUB_IMAGE` 覆盖。
    - **`pages:build`**：仓库提供 `vercel.json` 显式 `installCommand: "npm install"`——Vercel CLI 默认注入的 `npm install --unsafe-perm` 在 npm 12 已删除该 flag，会在依赖安装步骤直接失败（与业务代码无关）。
 
