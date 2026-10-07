@@ -20,9 +20,10 @@
    - **CI**：`Android TV APK` 工作流（Actions → Android TV APK → Run workflow）产出 release APK；配置 `KVIDEO_KEYSTORE_BASE64` / `KVIDEO_KEYSTORE_PASSWORD` / `KVIDEO_KEY_ALIAS` / `KVIDEO_KEY_PASSWORD` 四个 secrets 后产出可安装的签名包，否则为未签名包；填 `release_tag` 可直接发布到 GitHub Release。
    - **本地**：`android-tv/` 下 `./gradlew assembleRelease -PkvideoUrl=<服务器地址>`；签名通过 `KVIDEO_KEYSTORE_FILE` 等环境变量（或 `-PkvideoKeystoreFile=...`）提供，未提供时产出未签名 release（无法直接安装）。构建私网地址时 Gradle 会输出警告，避免再次把内网 IP 发给所有安装者。`versionCode`/`versionName` 见 `android-tv/app/build.gradle.kts`。
 7. **CI 产线**：
-   - **CI**：fork 补上 `CI` 工作流（lint / 单测 / 生产构建 / `pages:build`），每次 push 与 PR 自动验证构建链路。lint 门禁已清零：真实错误（`@ts-ignore`、可选链非空断言、JSX 未转义等）直接修复；上游基线债（`no-explicit-any` 与 react-hooks 编译器规则）降为 warn 保留可见性。注意：本地 Windows 直接跑 `pages:build` 可能因 Vercel CLI 的 Windows 兼容问题失败（该 CLI 自带警告），以 CI 的 Linux 结果为准。
+   - **CI**：fork 补上 `CI` 工作流（lint / 单测 / 生产构建 / `pages:build`），每次 push 与 PR 自动验证构建链路。lint 门禁已清零：真实错误（`@ts-ignore`、可选链非空断言、JSX 未转义等）直接修复；上游基线债（`no-explicit-any` 与 react-hooks 编译器规则）降为 warn 保留可见性。
    - **Docker Publish**：fork 默认没有上游的 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN`（fork 不继承 secrets），工作流改为无 secrets 时做**仅构建验证**（不推送，不再整条流水线报错），配好 secrets 后自动转为多架构发布。镜像名默认 `<owner>/kvideo`（小写），不再硬编码上游的 `kuekhaoyang/kvideo`，可用仓库变量 `DOCKERHUB_IMAGE` 覆盖。
    - **`pages:build`**：仓库提供 `vercel.json` 显式 `installCommand: "npm install"`——Vercel CLI 默认注入的 `npm install --unsafe-perm` 在 npm 12 已删除该 flag，会在依赖安装步骤直接失败（与业务代码无关）。
+   - **本地 Windows `pages:build`**：`scripts/patch-vercel-build-win.mjs`（`pages:build` 每次自动先跑，`npm ci` 后依旧生效）对 `@vercel/next` / `vercel` / `@cloudflare/next-on-pages` 打五处构建期补丁，修复 Vercel 工具链的 Windows 兼容问题：嵌套路由键反斜杠导致 `operationType` 误标 `Page`、lambda 查找失配、`.func` 去重 symlink 无权限、`npx` 包装进程挂死不退出等。补丁锚点失配（依赖升级）时只警告放行、不弄红构建；CI/Linux 有无补丁均可通过。
 
 **测试**：`npm test`（132 项，含远程导入收件箱/契约/路由与外链导入回退的回归）；fork 新增模块同时纳入 `verification/tests/regression/`（`./verification/run` 的严格验证链），其 lib/API 覆盖率为 100%。注意：验证链的应用级 100% 覆盖率门禁（`static.code-coverage`）在上游基线即不满足（大量上游文件无回归测试），属上游既有状态。
 
